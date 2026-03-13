@@ -20,6 +20,7 @@
 #define HTTP_RESP_DEALFILE_EXIST  3  // 别人已经分享此文件
 #define HTTP_RESP_TOKEN_ERR       4  //  token验证失败
 #define HTTP_RESP_FILE_EXIST  5  //个人已经存储了该文件
+#define HTTP_RESP_NICK_EXIST  6  // 昵称已存在
 
 #define UTIL_LOG_MODULE     "cgi"
 #define UTIL_LOG_PROC       "util"

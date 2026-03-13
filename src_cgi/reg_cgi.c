@@ -207,8 +207,19 @@ int user_register( char *reg_buf )
     ret2 = process_result_one(conn, sql_cmd, NULL); //指向sql查询语句
     if(ret2 == 2) //如果存在
     {
-        LOG(REG_LOG_MODULE, REG_LOG_PROC, "【%s】该用户已存在\n");
+        LOG(REG_LOG_MODULE, REG_LOG_PROC, "【%s】该用户已存在\n", user_name);
         ret = -2;
+        goto END;
+    }
+
+    //查看该昵称是否存在
+    memset(sql_cmd, 0, sizeof(sql_cmd));
+    sprintf(sql_cmd, "select * from user_info where nick_name = '%s'", nick_name);
+    ret2 = process_result_one(conn, sql_cmd, NULL);
+    if(ret2 == 2) //昵称已存在
+    {
+        LOG(REG_LOG_MODULE, REG_LOG_PROC, "【%s】该昵称已存在\n", nick_name);
+        ret = -3;
         goto END;
     }
 
@@ -309,6 +320,10 @@ int main()
             else if(ret == -2) // 用户存在
             {
                out = return_status(HTTP_RESP_USER_EXIST);//util_cgi.h
+            }
+            else if(ret == -3) // 昵称已存在
+            {
+               out = return_status(HTTP_RESP_NICK_EXIST);//util_cgi.h
             }
 
             if(out != NULL)

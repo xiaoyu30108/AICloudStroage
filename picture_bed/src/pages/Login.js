@@ -81,6 +81,8 @@ const Login = () => {
           form.setFieldsValue({ username: values.username, password: '' });
         } else if (data.code === 2) {
           message.error('用户名已存在，请重新输入！');
+        } else if (data.code === 6) {
+          message.error('昵称已存在，请重新输入！');
         }
       } catch (error) {
         message.error('注册失败，请检查网络连接！');

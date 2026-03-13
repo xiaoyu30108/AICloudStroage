@@ -42,7 +42,7 @@ export const registerUser = async (values) => {
   });
 
   const data = await response.json();
-  if (data.code !== 0 && data.code !== 2) {
+  if (data.code !== 0 && data.code !== 2 && data.code !== 6) {
     throw new Error(data.message || '注册失败');
   }
   return data;
