@@ -18,7 +18,8 @@ CREATE TABLE `file_info` (
   `size` bigint(20) DEFAULT '0' COMMENT '文件大小, 以字节为单位',
   `type` varchar(32) DEFAULT '' COMMENT '文件类型： png, zip, mp4……',
   `count` int(11) DEFAULT '0' COMMENT '文件引用计数,默认为1。每增加一个用户拥有此文件，此计数器+1',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_md5` (`md5`(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='文件信息表';
 
 DROP TABLE IF EXISTS `share_file_list`;

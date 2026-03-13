@@ -291,6 +291,9 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5,
                             long size, char *fileid, char *fdfs_file_url)
 {
     int ret = 0;
+    int ret2 = 0;
+    char tmp[512] = {0};
+    int count = 0;
     MYSQL *conn = NULL;
     time_t now;
     char create_time[TIME_STRING_LEN];
@@ -308,10 +311,21 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5,
 
     get_file_suffix(filename, suffix);
 
-    sprintf(sql_cmd,
-        "insert into file_info (md5, file_id, url, size, type, count) "
-        "values ('%s', '%s', '%s', '%ld', '%s', %d)",
-        md5, fileid, fdfs_file_url, size, suffix, 1);
+    // 先检查file_info表中是否已存在该md5的文件
+    sprintf(sql_cmd, "select count from file_info where md5 = '%s'", md5);
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if(ret2 == 0) //已存在，更新count（引用计数+1）
+    {
+        count = atoi(tmp);
+        sprintf(sql_cmd, "update file_info set count = %d where md5 = '%s'", count + 1, md5);
+    }
+    else //不存在，插入新记录
+    {
+        sprintf(sql_cmd,
+            "insert into file_info (md5, file_id, url, size, type, count) "
+            "values ('%s', '%s', '%s', '%ld', '%s', %d)",
+            md5, fileid, fdfs_file_url, size, suffix, 1);
+    }
 
     if (mysql_query(conn, sql_cmd) != 0)
     {
@@ -323,6 +337,16 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5,
 
     now = time(NULL);
     strftime(create_time, TIME_STRING_LEN - 1, "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+    // 先检查user_file_list表中该用户是否已拥有该md5文件，防止重复插入
+    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'", user, md5, filename);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if(ret2 == 0) //已存在，跳过插入
+    {
+        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "user [%s] already has file [%s], skip insert\n", user, filename);
+        goto END;
+    }
 
     sprintf(sql_cmd,
         "insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) "
@@ -339,8 +363,8 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5,
 
     // 更新用户文件数量
     sprintf(sql_cmd, "select count from user_file_count where user = '%s'", user);
-    char tmp[512] = {0};
-    int ret2 = process_result_one(conn, sql_cmd, tmp);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
     if (ret2 == 1)
     {
         sprintf(sql_cmd,
@@ -348,7 +372,7 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5,
     }
     else if (ret2 == 0)
     {
-        int count = atoi(tmp);
+        count = atoi(tmp);
         sprintf(sql_cmd,
             "update user_file_count set count = %d where user = '%s'", count + 1, user);
     }

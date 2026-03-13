@@ -786,6 +786,9 @@ END:
 int store_fileinfo_to_mysql(char *user, char *filename, char *md5, long size, char *fileid, char *fdfs_file_url)
 {
     int ret = 0;
+    int ret2 = 0;
+    char tmp[512] = {0};
+    int count = 0;
     MYSQL *conn = NULL; //数据库连接句柄
 
     time_t now;;
@@ -818,18 +821,28 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5, long size, ch
        -- type 文件类型： png, zip, mp4……
        -- count 文件引用计数， 默认为1， 每增加一个用户拥有此文件，此计数器+1
        */
-    sprintf(sql_cmd, "insert into file_info (md5, file_id, url, size, type, count) values ('%s', '%s', '%s', '%ld', '%s', %d)",
-            md5, fileid, fdfs_file_url, size, suffix, 1);
+    // 先检查file_info表中是否已存在该md5的文件
+    sprintf(sql_cmd, "select count from file_info where md5 = '%s'", md5);
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if(ret2 == 0) //已存在，更新count（引用计数+1）
+    {
+        count = atoi(tmp);
+        sprintf(sql_cmd, "update file_info set count = %d where md5 = '%s'", count + 1, md5);
+    }
+    else //不存在，插入新记录
+    {
+        sprintf(sql_cmd, "insert into file_info (md5, file_id, url, size, type, count) values ('%s', '%s', '%s', '%ld', '%s', %d)",
+                md5, fileid, fdfs_file_url, size, suffix, 1);
+    }
 
     if (mysql_query(conn, sql_cmd) != 0) //执行sql语句
     {
-        //print_error(conn, "插入失败");
-        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s 插入失败: %s\n", sql_cmd, mysql_error(conn));
+        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s 操作失败: %s\n", sql_cmd, mysql_error(conn));
         ret = -1;
         goto END;
     }
 
-    LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s 文件信息插入成功\n", sql_cmd);
+    LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s 文件信息操作成功\n", sql_cmd);
 
     //获取当前时间
     now = time(NULL);
@@ -844,6 +857,16 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5, long size, ch
        -- shared_status 共享状态, 0为没有共享， 1为共享
        -- pv 文件下载量，默认值为0，下载一次加1
        */
+    // 先检查user_file_list表中该用户是否已拥有该md5文件，防止重复插入
+    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'", user, md5, filename);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if(ret2 == 0) //已存在，跳过插入
+    {
+        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "user [%s] already has file [%s], skip insert\n", user, filename);
+        goto END;
+    }
+
     //sql语句
     sprintf(sql_cmd, "insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) values ('%s', '%s', '%s', '%s', %d, %d)", user, md5, create_time, filename, 0, 0);
     if(mysql_query(conn, sql_cmd) != 0)
@@ -855,9 +878,7 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5, long size, ch
 
     //查询用户文件数量
     sprintf(sql_cmd, "select count from user_file_count where user = '%s'", user);
-    int ret2 = 0;
-    char tmp[512] = {0};
-    int count = 0;
+    memset(tmp, 0, sizeof(tmp));
     //返回值： 0成功并保存记录集，1没有记录集，2有记录集但是没有保存，-1失败
     ret2 = process_result_one(conn, sql_cmd, tmp); //执行sql语句
     if(ret2 == 1) //没有记录

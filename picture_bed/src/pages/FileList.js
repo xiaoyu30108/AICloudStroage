@@ -43,6 +43,7 @@ const FileList = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const { user, logout } = useAuth();
+  const uploadingRef = React.useRef(false);
 
   const fetchFiles = async () => {
     try {
@@ -66,6 +67,9 @@ const FileList = () => {
   };
 
   const handleUpload = async (file) => {
+    // 使用 ref 同步判断，防止异步状态更新导致的重复触发
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
     try {
       setUploading(true);
       setUploadProgress(0);
@@ -79,6 +83,7 @@ const FileList = () => {
       console.error('上传错误：', error);
       message.error('上传失败！');
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
       setUploadProgress(0);
     }
