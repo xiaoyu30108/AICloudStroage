@@ -266,7 +266,9 @@ fastcgi_yuncunchu_docker/
 **普通上传**（文件 <= 10MB）：
 
 ```
-前端计算文件 MD5 → 构造 FormData（file + user + md5 + size）
+前端计算文件 MD5 → POST /api/md5（秒传检测）
+    → 命中已存在文件：直接复用 file_info 记录并写入 user_file_list
+    → 未命中：构造 FormData（file + user + md5 + size）
     → POST /api/upload (multipart/form-data)
     → 后端解析 multipart 数据 → 上传到 FastDFS → 获取 file_id 和 URL
     → 存入 file_info 表 + user_file_list 表
@@ -276,9 +278,9 @@ fastcgi_yuncunchu_docker/
 **分片上传**（文件 > 10MB）：
 
 ```
-Step 1: POST /api/chunk_init  → 初始化，返回已上传分片列表（断点续传）
+Step 1: POST /api/chunk_init  → 初始化，返回 uploadedChunks 已上传分片列表（断点续传）
 Step 2: POST /api/chunk_upload?md5=xxx&index=N  → 逐个上传分片
-Step 3: POST /api/chunk_merge  → 合并分片 → 上传到 FastDFS → 入库
+Step 3: POST /api/chunk_merge  → 合并分片或按 MD5 直接复用已有文件 → 入库
 ```
 
 - 分片大小：10MB
@@ -679,7 +681,7 @@ https://<你的公网IP>/
 | 接口 | 方法 | 参数 | 说明 |
 |------|------|------|------|
 | `/api/upload` | POST | multipart/form-data | 普通文件上传 |
-| `/api/md5` | POST | JSON | 文件秒传检测 |
+| `/api/md5` | POST | JSON | 文件秒传检测，命中时直接复用已有文件 |
 | `/api/myfiles?cmd=normal` | POST | JSON | 获取用户文件列表 |
 | `/api/dealfile?cmd=del` | POST | JSON | 删除文件 |
 | `/api/dealfile?cmd=share` | POST | JSON | 分享文件 |
@@ -689,7 +691,7 @@ https://<你的公网IP>/
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/chunk_init` | POST | 初始化分片上传，返回已上传分片列表 |
+| `/api/chunk_init` | POST | 初始化分片上传，返回 `uploadedChunks` 已上传分片列表 |
 | `/api/chunk_upload?md5=xxx&index=N` | POST | 上传单个分片（body=二进制数据） |
 | `/api/chunk_merge` | POST | 合并所有分片 |
 

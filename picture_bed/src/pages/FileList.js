@@ -73,14 +73,25 @@ const FileList = () => {
     try {
       setUploading(true);
       setUploadProgress(0);
-      await uploadImage(file, user, (progress) => {
+      const result = await uploadImage(file, user, (progress) => {
         setUploadProgress(progress);
       });
-      message.success('上传成功！');
+      if (result.alreadyExists) {
+        message.warning('文件已存在，无需重复上传');
+      } else if (result.instant) {
+        message.success('秒传成功！');
+      } else {
+        message.success('上传成功！');
+      }
       describeFile(file, user).catch(() => {});
       fetchFiles();
     } catch (error) {
       console.error('上传错误：', error);
+      if (error.tokenExpired) {
+        message.error('登录已过期，请重新登录');
+        logout();
+        return;
+      }
       message.error('上传失败！');
     } finally {
       uploadingRef.current = false;

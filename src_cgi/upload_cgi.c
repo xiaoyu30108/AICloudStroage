@@ -47,8 +47,123 @@ void read_cfg()
     //get_cfg_value(CFG_PATH, "redis", "port", redis_port);
     //LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "redis:[ip=%s,port=%s]\n", redis_ip, redis_port);
 }
+
+/*
+ * 复用已存在的MD5文件。
+ * 返回值：
+ *   0  已复用成功
+ *   1  服务器不存在该MD5，继续物理上传
+ *   2  当前用户已拥有该文件
+ *  -1  数据库操作失败
+ */
+int bind_existing_file_to_user(char *user, char *filename, char *md5)
+{
+    int ret = 1;
+    int ret2 = 0;
+    int count = 0;
+    char tmp[512] = {0};
+    char sql_cmd[SQL_MAX_LEN] = {0};
+    char create_time[TIME_STRING_LEN] = {0};
+    MYSQL *conn = NULL;
+    time_t now;
+
+    conn = msql_conn(mysql_user, mysql_pwd, mysql_db);
+    if (conn == NULL)
+    {
+        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "msql_conn connect err\n");
+        return -1;
+    }
+
+    mysql_query(conn, "set names utf8");
+
+    sprintf(sql_cmd, "select count from file_info where md5 = '%s'", md5);
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if (ret2 == 1)
+    {
+        ret = 1;
+        goto END;
+    }
+    if (ret2 != 0)
+    {
+        ret = -1;
+        goto END;
+    }
+
+    count = atoi(tmp);
+
+    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'",
+            user, md5, filename);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if (ret2 == 0)
+    {
+        ret = 2;
+        goto END;
+    }
+    if (ret2 != 1)
+    {
+        ret = -1;
+        goto END;
+    }
+
+    sprintf(sql_cmd, "update file_info set count = %d where md5 = '%s'", count + 1, md5);
+    if (mysql_query(conn, sql_cmd) != 0)
+    {
+        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s 操作失败: %s\n", sql_cmd, mysql_error(conn));
+        ret = -1;
+        goto END;
+    }
+
+    now = time(NULL);
+    strftime(create_time, TIME_STRING_LEN - 1, "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+    sprintf(sql_cmd, "insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) "
+                     "values ('%s', '%s', '%s', '%s', %d, %d)",
+            user, md5, create_time, filename, 0, 0);
+    if (mysql_query(conn, sql_cmd) != 0)
+    {
+        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s 操作失败: %s\n", sql_cmd, mysql_error(conn));
+        ret = -1;
+        goto END;
+    }
+
+    sprintf(sql_cmd, "select count from user_file_count where user = '%s'", user);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if (ret2 == 1)
+    {
+        sprintf(sql_cmd, "insert into user_file_count (user, count) values('%s', %d)", user, 1);
+    }
+    else if (ret2 == 0)
+    {
+        count = atoi(tmp);
+        sprintf(sql_cmd, "update user_file_count set count = %d where user = '%s'", count + 1, user);
+    }
+    else
+    {
+        ret = -1;
+        goto END;
+    }
+
+    if (mysql_query(conn, sql_cmd) != 0)
+    {
+        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s 操作失败: %s\n", sql_cmd, mysql_error(conn));
+        ret = -1;
+        goto END;
+    }
+
+    ret = 0;
+
+END:
+    if (conn != NULL)
+    {
+        mysql_close(conn);
+    }
+
+    return ret;
+}
 // 跳过空格、换行符号
-char *trim_space_and_around(char *begin, char *end) 
+char *trim_space_and_around(char *begin, char *end)
 {
     char *p = begin;
     while (1)
@@ -811,6 +926,25 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5, long size, ch
     //得到文件后缀字符串 如果非法文件后缀,返回"null"
     get_file_suffix(filename, suffix); //mp4, jpg, png
 
+    /*
+       -- =============================================== 用户文件列表
+       -- user 文件所属用户
+       -- md5 文件md5
+       -- create_time 文件创建时间
+       -- file_name 文件名字
+       -- shared_status 共享状态, 0为没有共享， 1为共享
+       -- pv 文件下载量，默认值为0，下载一次加1
+       */
+    // 先检查user_file_list表中该用户是否已拥有该md5文件，防止重复插入和重复累计引用计数
+    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'", user, md5, filename);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if(ret2 == 0) //已存在，跳过插入
+    {
+        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "user [%s] already has file [%s], skip insert\n", user, filename);
+        goto END;
+    }
+
     //sql 语句
     /*
        -- =============================================== 文件信息表
@@ -821,7 +955,6 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5, long size, ch
        -- type 文件类型： png, zip, mp4……
        -- count 文件引用计数， 默认为1， 每增加一个用户拥有此文件，此计数器+1
        */
-    // 先检查file_info表中是否已存在该md5的文件
     sprintf(sql_cmd, "select count from file_info where md5 = '%s'", md5);
     ret2 = process_result_one(conn, sql_cmd, tmp);
     if(ret2 == 0) //已存在，更新count（引用计数+1）
@@ -847,25 +980,6 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5, long size, ch
     //获取当前时间
     now = time(NULL);
     strftime(create_time, TIME_STRING_LEN-1, "%Y-%m-%d %H:%M:%S", localtime(&now));
-
-    /*
-       -- =============================================== 用户文件列表
-       -- user 文件所属用户
-       -- md5 文件md5
-       -- create_time 文件创建时间
-       -- file_name 文件名字
-       -- shared_status 共享状态, 0为没有共享， 1为共享
-       -- pv 文件下载量，默认值为0，下载一次加1
-       */
-    // 先检查user_file_list表中该用户是否已拥有该md5文件，防止重复插入
-    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'", user, md5, filename);
-    memset(tmp, 0, sizeof(tmp));
-    ret2 = process_result_one(conn, sql_cmd, tmp);
-    if(ret2 == 0) //已存在，跳过插入
-    {
-        LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "user [%s] already has file [%s], skip insert\n", user, filename);
-        goto END;
-    }
 
     //sql语句
     sprintf(sql_cmd, "insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) values ('%s', '%s', '%s', '%s', %d, %d)", user, md5, create_time, filename, 0, 0);
@@ -926,7 +1040,7 @@ int main()
     {
         char *contentLength = getenv("CONTENT_LENGTH");
         long len;
-        int ret = 0;
+        int ret = HTTP_RESP_OK;
 
         printf("Content-type: text/html\r\n\r\n");
 
@@ -953,16 +1067,33 @@ int main()
             if (recv_save_file(len, user, filename, md5, &size) < 0)
             {
                 LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "recv_save_file failed\n");
-                ret = -1;
+                ret = HTTP_RESP_FAIL;
                 goto END;
             }
 
             LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "%s成功上传[%s, 大小：%ld, md5码：%s]到本地\n", user, filename, size, md5);
 
+            {
+                int dedupe_ret = bind_existing_file_to_user(user, filename, md5);
+                if (dedupe_ret == 0 || dedupe_ret == 2)
+                {
+                    unlink(filename);
+                    LOG(UPLOAD_LOG_MODULE, UPLOAD_LOG_PROC, "reuse existing file for md5=%s\n", md5);
+                    ret = HTTP_RESP_OK;
+                    goto END;
+                }
+                if (dedupe_ret < 0)
+                {
+                    unlink(filename);
+                    ret = HTTP_RESP_FAIL;
+                    goto END;
+                }
+            }
+
             //===============> 将该文件存入fastDFS中,并得到文件的file_id <============
             if (upload_to_dstorage(filename, fileid) < 0)
             {
-                ret = -1;
+                ret = HTTP_RESP_FAIL;
                 goto END;
             }
 
@@ -973,7 +1104,7 @@ int main()
             // 拼接出完整的http地址
             if (make_file_url(fileid, fdfs_file_url) < 0)
             {
-                ret = -1;
+                ret = HTTP_RESP_FAIL;
                 goto END;
             }
 
@@ -981,7 +1112,7 @@ int main()
             // 把文件写入file_info
             if (store_fileinfo_to_mysql(user, filename, md5, size, fileid, fdfs_file_url) < 0)
             {
-                ret = -1;
+                ret = HTTP_RESP_FAIL;
                 goto END;
             }
 
@@ -1000,7 +1131,7 @@ END:
                成功：{"code":"008"}
                失败：{"code":"009"}
                */
-            if(ret == 0) //成功上传
+            if(ret == HTTP_RESP_OK) //成功上传
             {
                 out = return_status(HTTP_RESP_OK);//common.h
             }

@@ -50,6 +50,156 @@ void read_cfg()
         mysql_user, mysql_pwd, mysql_db, redis_ip, redis_port);
 }
 
+/*
+ * 复用已存在的MD5文件。
+ * 返回值：
+ *   0  已复用成功
+ *   1  服务器不存在该MD5，继续分片合并
+ *   2  当前用户已拥有该文件
+ *  -1  数据库操作失败
+ */
+int bind_existing_file_to_user(char *user, char *filename, char *md5)
+{
+    int ret = 1;
+    int ret2 = 0;
+    int count = 0;
+    char tmp[512] = {0};
+    char sql_cmd[SQL_MAX_LEN] = {0};
+    char create_time[TIME_STRING_LEN] = {0};
+    MYSQL *conn = NULL;
+    time_t now;
+
+    conn = msql_conn(mysql_user, mysql_pwd, mysql_db);
+    if (conn == NULL)
+    {
+        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "mysql connect err\n");
+        return -1;
+    }
+
+    mysql_query(conn, "set names utf8");
+
+    sprintf(sql_cmd, "select count from file_info where md5 = '%s'", md5);
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if (ret2 == 1)
+    {
+        ret = 1;
+        goto END;
+    }
+    if (ret2 != 0)
+    {
+        ret = -1;
+        goto END;
+    }
+
+    count = atoi(tmp);
+
+    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'",
+            user, md5, filename);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if (ret2 == 0)
+    {
+        ret = 2;
+        goto END;
+    }
+    if (ret2 != 1)
+    {
+        ret = -1;
+        goto END;
+    }
+
+    sprintf(sql_cmd, "update file_info set count = %d where md5 = '%s'", count + 1, md5);
+    if (mysql_query(conn, sql_cmd) != 0)
+    {
+        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "%s err: %s\n", sql_cmd, mysql_error(conn));
+        ret = -1;
+        goto END;
+    }
+
+    now = time(NULL);
+    strftime(create_time, TIME_STRING_LEN - 1, "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+    sprintf(sql_cmd,
+        "insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) "
+        "values ('%s', '%s', '%s', '%s', %d, %d)",
+        user, md5, create_time, filename, 0, 0);
+    if (mysql_query(conn, sql_cmd) != 0)
+    {
+        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "%s err: %s\n", sql_cmd, mysql_error(conn));
+        ret = -1;
+        goto END;
+    }
+
+    sprintf(sql_cmd, "select count from user_file_count where user = '%s'", user);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if (ret2 == 1)
+    {
+        sprintf(sql_cmd,
+            "insert into user_file_count (user, count) values('%s', %d)", user, 1);
+    }
+    else if (ret2 == 0)
+    {
+        count = atoi(tmp);
+        sprintf(sql_cmd,
+            "update user_file_count set count = %d where user = '%s'", count + 1, user);
+    }
+    else
+    {
+        ret = -1;
+        goto END;
+    }
+
+    if (mysql_query(conn, sql_cmd) != 0)
+    {
+        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "%s err: %s\n", sql_cmd, mysql_error(conn));
+        ret = -1;
+        goto END;
+    }
+
+    ret = 0;
+
+END:
+    if (conn != NULL)
+        mysql_close(conn);
+    return ret;
+}
+
+void cleanup_chunk_upload_state(redisContext *redis_conn, char *redis_key, char *file_md5)
+{
+    char chunk_dir[512] = {0};
+    DIR *dir = NULL;
+    struct dirent *entry = NULL;
+
+    if (redis_conn != NULL && redis_key != NULL)
+    {
+        rop_del_key(redis_conn, redis_key);
+    }
+
+    sprintf(chunk_dir, "%s/%s", CHUNK_TEMP_DIR, file_md5);
+    dir = opendir(chunk_dir);
+    if (dir == NULL)
+    {
+        return;
+    }
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        char chunk_path[512] = {0};
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        sprintf(chunk_path, "%s/%s", chunk_dir, entry->d_name);
+        unlink(chunk_path);
+    }
+
+    closedir(dir);
+    rmdir(chunk_dir);
+}
+
 int parse_merge_json(char *buf, char *user, char *token, char *file_md5, char *filename)
 {
     int ret = 0;
@@ -311,6 +461,16 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5,
 
     get_file_suffix(filename, suffix);
 
+    // 先检查user_file_list表中该用户是否已拥有该md5文件，防止重复插入
+    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'", user, md5, filename);
+    memset(tmp, 0, sizeof(tmp));
+    ret2 = process_result_one(conn, sql_cmd, tmp);
+    if(ret2 == 0) //已存在，跳过插入
+    {
+        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "user [%s] already has file [%s], skip insert\n", user, filename);
+        goto END;
+    }
+
     // 先检查file_info表中是否已存在该md5的文件
     sprintf(sql_cmd, "select count from file_info where md5 = '%s'", md5);
     ret2 = process_result_one(conn, sql_cmd, tmp);
@@ -337,16 +497,6 @@ int store_fileinfo_to_mysql(char *user, char *filename, char *md5,
 
     now = time(NULL);
     strftime(create_time, TIME_STRING_LEN - 1, "%Y-%m-%d %H:%M:%S", localtime(&now));
-
-    // 先检查user_file_list表中该用户是否已拥有该md5文件，防止重复插入
-    sprintf(sql_cmd, "select pv from user_file_list where user = '%s' and md5 = '%s' and file_name = '%s'", user, md5, filename);
-    memset(tmp, 0, sizeof(tmp));
-    ret2 = process_result_one(conn, sql_cmd, tmp);
-    if(ret2 == 0) //已存在，跳过插入
-    {
-        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "user [%s] already has file [%s], skip insert\n", user, filename);
-        goto END;
-    }
 
     sprintf(sql_cmd,
         "insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) "
@@ -423,6 +573,7 @@ int main()
         char token[256] = {0};
         char file_md5[256] = {0};
         char filename[256] = {0};
+        char redis_key[512] = {0};
 
         if (parse_merge_json(buf, user, token, file_md5, filename) != 0)
         {
@@ -451,8 +602,24 @@ int main()
             continue;
         }
 
-        char redis_key[512] = {0};
         sprintf(redis_key, "chunk:%s", file_md5);
+
+        {
+            int dedupe_ret = bind_existing_file_to_user(user, filename, file_md5);
+            if (dedupe_ret == 0 || dedupe_ret == 2)
+            {
+                cleanup_chunk_upload_state(redis_conn, redis_key, file_md5);
+                rop_disconnect(redis_conn);
+                printf("{\"code\":0}");
+                continue;
+            }
+            if (dedupe_ret < 0)
+            {
+                rop_disconnect(redis_conn);
+                printf("{\"code\":1,\"msg\":\"db error\"}");
+                continue;
+            }
+        }
 
         char count_str[32] = {0};
         char size_str[64] = {0};

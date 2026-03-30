@@ -3,7 +3,6 @@ import { Upload, Card, Row, Col, Modal, message, Tooltip, Progress } from 'antd'
 import { PlusOutlined, ShareAltOutlined, DeleteOutlined, DownloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import styled from '@emotion/styled';
 import { useAuth } from '../contexts/AuthContext';  // 添加这行导入
-import SparkMD5 from 'spark-md5';
 import { fetchUserImages, uploadImage, deleteImage, shareFile, cancelShareFile, pvFile } from '../services/images';
 import { describeFile } from '../services/ai';
 
@@ -76,15 +75,26 @@ const ImageList = () => {
     try {
       setUploading(true);
       setUploadProgress(0);
-      await uploadImage(file, user, (progress) => {
+      const result = await uploadImage(file, user, (progress) => {
         setUploadProgress(progress);
       });
-      message.success('上传成功！');
+      if (result.alreadyExists) {
+        message.warning('图片已存在，无需重复上传');
+      } else if (result.instant) {
+        message.success('秒传成功！');
+      } else {
+        message.success('上传成功！');
+      }
       // 异步调用 AI 生成描述（不阻塞上传流程）
       describeFile(file, user).catch(() => {});
       fetchImages();
     } catch (error) {
       console.error('上传错误：', error);
+      if (error.tokenExpired) {
+        message.error('登录已过期，请重新登录');
+        logout();
+        return;
+      }
       message.error('上传失败！');
     } finally {
       uploadingRef.current = false;

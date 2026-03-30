@@ -62,6 +62,43 @@ const calculateMD5 = (file) => {
   });
 };
 
+const makeTokenExpiredError = () => {
+  const err = new Error('token验证失败');
+  err.tokenExpired = true;
+  return err;
+};
+
+const tryInstantUpload = async (file, user, md5) => {
+  const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.MD5}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      user: user.username,
+      token: user.token,
+      md5,
+      fileName: file.name
+    })
+  });
+
+  const data = await response.json();
+  if (data.code === 4) {
+    throw makeTokenExpiredError();
+  }
+  if (data.code === 0) {
+    return { instant: true, alreadyExists: false, md5 };
+  }
+  if (data.code === 5) {
+    return { instant: true, alreadyExists: true, md5 };
+  }
+  if (data.code === 1) {
+    return { instant: false, alreadyExists: false, md5 };
+  }
+
+  throw new Error(data.msg || '秒传检测失败');
+};
+
 // 普通上传（小文件 <= 10MB）
 export const uploadImage = async (file, user, onProgress) => {
   // 大文件自动走分片上传
@@ -70,6 +107,11 @@ export const uploadImage = async (file, user, onProgress) => {
   }
 
   const md5 = await calculateMD5(file);
+  const instantResult = await tryInstantUpload(file, user, md5);
+  if (instantResult.instant) {
+    if (onProgress) onProgress(100);
+    return instantResult;
+  }
 
   // FormData 字段顺序必须匹配后端 recv_save_file() 的解析顺序：
   // file 在前（含 filename），然后 user、md5、size 在后
@@ -87,15 +129,24 @@ export const uploadImage = async (file, user, onProgress) => {
   if (onProgress) onProgress(100);
 
   const data = await response.json();
+  if (data.code === 4) {
+    throw makeTokenExpiredError();
+  }
   if (data.code !== 0) {
     throw new Error(data.msg || '上传失败');
   }
-  return data;
+  return { ...data, instant: false, alreadyExists: false, md5 };
 };
 
 // 分片上传（大文件 > 10MB）
 export const uploadChunked = async (file, user, onProgress) => {
   const md5 = await calculateMD5(file);
+  const instantResult = await tryInstantUpload(file, user, md5);
+  if (instantResult.instant) {
+    if (onProgress) onProgress(100);
+    return instantResult;
+  }
+
   const chunkSize = API_CONFIG.CHUNK_SIZE;
   const chunkCount = Math.ceil(file.size / chunkSize);
 
@@ -116,14 +167,18 @@ export const uploadChunked = async (file, user, onProgress) => {
   });
 
   const initData = await initRes.json();
+  if (initData.code === 4) {
+    throw makeTokenExpiredError();
+  }
   if (initData.code !== 0) {
     throw new Error(initData.msg || '分片初始化失败');
   }
 
   // 获取已上传的分片索引（断点续传）
   const uploadedSet = new Set();
-  if (initData.uploaded && initData.uploaded.length > 0) {
-    initData.uploaded.split(',').forEach(idx => {
+  const uploadedChunks = initData.uploadedChunks || initData.uploaded || '';
+  if (uploadedChunks.length > 0) {
+    uploadedChunks.split(',').forEach(idx => {
       const n = parseInt(idx.trim(), 10);
       if (!isNaN(n)) uploadedSet.add(n);
     });
@@ -174,12 +229,15 @@ export const uploadChunked = async (file, user, onProgress) => {
   });
 
   const mergeData = await mergeRes.json();
+  if (mergeData.code === 4) {
+    throw makeTokenExpiredError();
+  }
   if (mergeData.code !== 0) {
     throw new Error(mergeData.msg || '分片合并失败');
   }
 
   if (onProgress) onProgress(100);
-  return mergeData;
+  return { ...mergeData, instant: false, alreadyExists: false, md5 };
 };
 
 // 更新文件下载次数（pv+1）

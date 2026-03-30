@@ -5,6 +5,7 @@ export const API_CONFIG = {
     LOGIN: '/api/login',
     REGISTER: '/api/reg',
     MY_FILES: '/api/myfiles',
+    MD5: '/api/md5',
     UPLOAD: '/api/upload',
     DEAL_FILE: '/api/dealfile',
     DEAL_SHARE_FILE: '/api/dealsharefile',
