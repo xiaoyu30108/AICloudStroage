@@ -132,7 +132,8 @@ $(dealfile):$(CGI_SRC_PATH)/dealfile_cgi.o \
 			$(COMMON_PATH)/cJSON.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
-			$(COMMON_PATH)/cfg.o
+			$(COMMON_PATH)/cfg.o \
+			$(COMMON_PATH)/md5.o
 	$(CC) $^ -o $@ $(LIBS)
 # 共享文件列表展示
 $(sharefiles):	$(CGI_SRC_PATH)/sharefiles_cgi.o \
@@ -208,7 +209,8 @@ $(ai): $(CGI_SRC_PATH)/ai_cgi.o \
 	   $(COMMON_PATH)/cJSON.o \
 	   $(COMMON_PATH)/deal_mysql.o \
 	   $(COMMON_PATH)/redis_op.o \
-	   $(COMMON_PATH)/cfg.o
+	   $(COMMON_PATH)/cfg.o \
+	   $(COMMON_PATH)/md5.o
 	$(CXX) $^ -o $@ $(LIBS) $(AI_LIBS)
 # =====================================================================
 
@@ -226,4 +228,3 @@ clean:
 # 声明伪文件
 .PHONY:clean ALL
 #######################################################################
-

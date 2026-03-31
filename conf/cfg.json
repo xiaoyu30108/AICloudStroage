@@ -33,7 +33,7 @@
 
 	"public_server":
 	{
-		"ip": "xxx.xx.xx.xx",
+		"ip": "110.42.247.164",
 		"port": "8080"
 	},
 
@@ -48,6 +48,7 @@
 	"faiss":
 	{
 		"index_path": "/data/faiss/index.bin",
+		"user_index_dir": "/data/faiss/users",
 		"id_map_path": "/data/faiss/id_map.json"
 	}
 

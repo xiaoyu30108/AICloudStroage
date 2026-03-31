@@ -24,6 +24,7 @@ extern "C" {
 static faiss::IndexFlatIP *g_index = NULL;
 static int g_dimension = 0;
 static char g_index_path[512] = {0};
+static int g_auto_save = 1;
 
 static int file_exists(const char *path)
 {
@@ -36,9 +37,15 @@ static int file_exists(const char *path)
  */
 int faiss_init(const char *index_path, int dimension)
 {
-    if (g_index != NULL) {
-        // 已初始化，直接返回
+    if (g_index != NULL && strcmp(g_index_path, index_path) == 0 && g_dimension == dimension) {
         return 0;
+    }
+
+    if (g_index != NULL) {
+        delete g_index;
+        g_index = NULL;
+        g_dimension = 0;
+        memset(g_index_path, 0, sizeof(g_index_path));
     }
 
     g_dimension = dimension;
@@ -121,7 +128,9 @@ int faiss_add(float *vector, int dimension)
     LOG(FW_LOG_MODULE, FW_LOG_PROC, "faiss_add: id=%d, ntotal=%ld\n", faiss_id, g_index->ntotal);
 
     // 每次添加后自动持久化
-    faiss_save(g_index_path);
+    if (g_auto_save) {
+        faiss_save(g_index_path);
+    }
 
     return faiss_id;
 }
@@ -198,6 +207,11 @@ int faiss_save(const char *index_path)
     return 0;
 }
 
+void faiss_set_auto_save(int enabled)
+{
+    g_auto_save = enabled ? 1 : 0;
+}
+
 /**
  * 获取索引中向量总数
  */
@@ -217,5 +231,6 @@ void faiss_reset(void)
         g_index = NULL;
     }
     g_dimension = 0;
+    g_auto_save = 1;
     memset(g_index_path, 0, sizeof(g_index_path));
 }

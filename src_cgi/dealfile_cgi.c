@@ -17,6 +17,11 @@
 #include "redis_op.h"
 #include "cfg.h"
 #include "cJSON.h"
+#include "md5.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 
 #define DEALFILE_LOG_MODULE       "cgi"
@@ -30,6 +35,7 @@ static char mysql_db[128] = {0};
 //redis 服务器ip、端口
 static char redis_ip[30] = {0};
 static char redis_port[10] = {0};
+static char faiss_lock_dir[512] = "/tmp/faiss_locks";
 
 //读取配置信息
 void read_cfg()
@@ -44,6 +50,76 @@ void read_cfg()
     get_cfg_value(CFG_PATH, "redis", "ip", redis_ip);
     get_cfg_value(CFG_PATH, "redis", "port", redis_port);
     LOG(DEALFILE_LOG_MODULE, DEALFILE_LOG_PROC, "redis:[ip=%s,port=%s]\n", redis_ip, redis_port);
+}
+
+static int ensure_dir_recursive(const char *path)
+{
+    char tmp[512] = {0};
+    int len = 0;
+
+    if (!path || strlen(path) == 0) return -1;
+
+    strncpy(tmp, path, sizeof(tmp) - 1);
+    len = strlen(tmp);
+    if (len == 0) return -1;
+
+    if (tmp[len - 1] == '/') {
+        tmp[len - 1] = '\0';
+    }
+
+    for (char *p = tmp + 1; *p; ++p) {
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) {
+                return -1;
+            }
+            *p = '/';
+        }
+    }
+
+    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static void md5_hex_string(const char *input, char out[33])
+{
+    MD5_CTX ctx;
+    unsigned char digest[16] = {0};
+
+    memset(out, 0, 33);
+    MD5Init(&ctx);
+    MD5Update(&ctx, (unsigned char *)input, (unsigned int)strlen(input));
+    MD5Final(&ctx, digest);
+
+    for (int i = 0; i < 16; i++) {
+        sprintf(out + i * 2, "%02x", digest[i]);
+    }
+}
+
+static void get_user_dirty_path(const char *user, char *out_path, int out_len)
+{
+    char hash[33] = {0};
+    md5_hex_string(user, hash);
+    snprintf(out_path, out_len, "%s/%s.dirty", faiss_lock_dir, hash);
+}
+
+static void mark_user_index_dirty(const char *user)
+{
+    char dirty_path[512] = {0};
+    int fd = -1;
+
+    if (ensure_dir_recursive(faiss_lock_dir) != 0) {
+        return;
+    }
+
+    get_user_dirty_path(user, dirty_path, sizeof(dirty_path));
+    fd = open(dirty_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (fd >= 0) {
+        close(fd);
+    }
 }
 
 //解析的json包
@@ -514,6 +590,20 @@ int del_file(char *user, char *md5, char *filename)
         ret = -1;
         goto END;
      }
+
+    //删除用户自己的 AI 检索记录，避免残留幽灵向量
+    sprintf(sql_cmd, "delete from user_file_ai_desc where user = '%s' and md5 = '%s'", user, md5);
+    if (mysql_query(conn, sql_cmd) != 0)
+    {
+        LOG(DEALFILE_LOG_MODULE, DEALFILE_LOG_PROC, "%s 操作失败: %s\n", sql_cmd, mysql_error(conn));
+        ret = -1;
+        goto END;
+    }
+
+    if ((int)mysql_affected_rows(conn) > 0)
+    {
+        mark_user_index_dirty(user);
+    }
     
     //文件信息表(file_info)的文件引用计数count，减去1
     //查看该文件文件引用计数

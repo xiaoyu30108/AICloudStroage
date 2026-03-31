@@ -74,7 +74,7 @@ const Home = () => {
   const [searching, setSearching] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [apiKeySaved, setApiKeySaved] = useState(false);
-  const [apiKeyLoaded, setApiKeyLoaded] = useState('');  // 记录从后端加载的 key
+  const [apiKeyLoaded, setApiKeyLoaded] = useState('');  // 记录从浏览器本地加载的 key
   const [rebuilding, setRebuilding] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -82,7 +82,7 @@ const Home = () => {
   useEffect(() => {
     if (user && user.token) {
       fetchDashboardData();
-      // 从后端加载 API Key
+      // 从浏览器本地加载 API Key
       fetchApiKey(user).then(key => {
         if (key) {
           setApiKeyInput(key);
@@ -265,7 +265,7 @@ const Home = () => {
       let success = 0;
       for (const f of files) {
         try {
-          await describeFileByMd5(f.md5, f.file_name || f.name, f.type, user, apiKeyLoaded);
+          await describeFileByMd5(f.md5, f.file_name || f.name, f.type, user, apiKeyLoaded, true);
           success++;
         } catch (e) {
           console.warn('describe failed for', f.md5, e);

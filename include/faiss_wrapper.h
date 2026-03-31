@@ -7,6 +7,7 @@ extern "C" {
 
 /**
  * @brief  初始化 FAISS 索引（加载已有文件或创建新索引）
+ *         如果当前进程已加载其他路径的索引，则自动切换到新路径。
  *
  * @param index_path  索引文件路径
  * @param dimension   向量维度（如 1024）
@@ -47,6 +48,13 @@ int faiss_search(float *query, int dimension, int topk,
  * @returns  0 成功, -1 失败
  */
 int faiss_save(const char *index_path);
+
+/**
+ * @brief  设置是否在 faiss_add 后自动保存索引
+ *
+ * @param enabled 1=自动保存，0=关闭自动保存
+ */
+void faiss_set_auto_save(int enabled);
 
 /**
  * @brief  获取当前索引中的向量总数

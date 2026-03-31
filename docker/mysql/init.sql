@@ -96,3 +96,20 @@ CREATE TABLE IF NOT EXISTS `file_ai_desc` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_md5` (`md5`(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI文件描述与向量表';
+
+CREATE TABLE IF NOT EXISTS `user_file_ai_desc` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user` varchar(32) NOT NULL COMMENT '所属用户',
+  `md5` varchar(256) NOT NULL COMMENT '对应文件md5',
+  `cache_id` bigint DEFAULT NULL COMMENT '关联 file_ai_desc.id 的缓存记录',
+  `description` text NOT NULL COMMENT '用户侧可检索的文件描述',
+  `embedding` mediumblob DEFAULT NULL COMMENT '向量序列化 float[1024]，重建用户索引用',
+  `faiss_id` int DEFAULT -1 COMMENT '用户私有 FAISS 索引中的 ID',
+  `model` varchar(64) DEFAULT '' COMMENT '使用的模型名',
+  `status` tinyint DEFAULT 0 COMMENT '0=待处理 1=完成 2=失败',
+  `create_time` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_user_md5` (`user`, `md5`(191)),
+  KEY `idx_user_status` (`user`, `status`),
+  KEY `idx_user_faiss` (`user`, `faiss_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户级AI文件描述与向量表';

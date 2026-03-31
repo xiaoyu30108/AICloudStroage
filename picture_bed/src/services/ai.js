@@ -5,69 +5,27 @@ const AI_ENDPOINT = `${API_CONFIG.BASE_URL}/api/ai`;
 const API_KEY_STORAGE_PREFIX = 'dashscope_api_key_';
 
 /**
- * 从后端获取用户的 API Key
+ * 从浏览器本地读取 API Key
  */
 export const fetchApiKey = async (user) => {
-  try {
-    const response = await fetch(`${AI_ENDPOINT}?cmd=get_apikey`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user: user.username,
-        token: user.token
-      })
-    });
-    const data = await response.json();
-    if (data.code === 4) {
-      const err = new Error('token expired');
-      err.tokenExpired = true;
-      throw err;
-    }
-    if (data.code === 0 && data.api_key) {
-      return data.api_key;
-    }
-
-    // 数据库无 key，检查 localStorage 是否有该用户的旧 key 需要迁移
-    const localKey = localStorage.getItem(API_KEY_STORAGE_PREFIX + user.username);
-    if (localKey) {
-      // 迁移到数据库
-      await saveApiKey(localKey, user);
-      // 清理 localStorage
-      localStorage.removeItem(API_KEY_STORAGE_PREFIX + user.username);
-      return localKey;
-    }
-
-    return '';
-  } catch (error) {
-    if (error.tokenExpired) throw error;
-    console.warn('fetchApiKey error:', error);
-    return '';
-  }
+  if (!user || !user.username) return '';
+  return localStorage.getItem(API_KEY_STORAGE_PREFIX + user.username) || '';
 };
 
 /**
- * 保存 API Key 到后端数据库
+ * 保存 API Key 到浏览器本地
  */
 export const saveApiKey = async (key, user) => {
-  const response = await fetch(`${AI_ENDPOINT}?cmd=set_apikey`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      user: user.username,
-      token: user.token,
-      api_key: key
-    })
-  });
-  const data = await response.json();
-  if (data.code === 4) {
-    const err = new Error('token expired');
-    err.tokenExpired = true;
-    throw err;
+  if (!user || !user.username) {
+    throw new Error('用户信息无效');
   }
-  if (data.code !== 0) {
-    throw new Error(data.msg || '保存 API Key 失败');
+  const storageKey = API_KEY_STORAGE_PREFIX + user.username;
+  if (key) {
+    localStorage.setItem(storageKey, key);
+  } else {
+    localStorage.removeItem(storageKey);
   }
-  return data;
+  return { code: 0, msg: 'ok' };
 };
 
 // 计算文件 MD5（与 images.js 中一致）
@@ -124,7 +82,7 @@ export const describeFile = async (file, user, apiKey) => {
 /**
  * 对已有文件重新生成 AI 描述（通过 md5）
  */
-export const describeFileByMd5 = async (md5, filename, type, user, apiKey) => {
+export const describeFileByMd5 = async (md5, filename, type, user, apiKey, skipRebuild = false) => {
   const body = {
     user: user.username,
     token: user.token,
@@ -133,6 +91,7 @@ export const describeFileByMd5 = async (md5, filename, type, user, apiKey) => {
     type: type,
     force: true
   };
+  if (skipRebuild) body.skip_rebuild = true;
   if (apiKey) body.api_key = apiKey;
 
   const response = await fetch(`${AI_ENDPOINT}?cmd=describe`, {
