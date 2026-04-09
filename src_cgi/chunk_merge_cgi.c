@@ -249,15 +249,11 @@ int verify_all_chunks(char *file_md5, int chunk_count)
     return 0;
 }
 
-// 使用FastDFS appender API合并分片
+// 使用FastDFS appender API合并分片（基于文件路径，避免malloc大块内存）
 int merge_chunks_to_fastdfs(char *file_md5, int chunk_count, char *filename, char *fileid)
 {
     int result = 0;
-    char fdfs_cli_conf_path[256] = {0};
     char path[512] = {0};
-    struct stat st;
-    char *buf = NULL;
-    int fd;
     char group_name[FDFS_GROUP_NAME_MAX_LEN + 1];
     ConnectionInfo *pTrackerServer = NULL;
     ConnectionInfo storageServer;
@@ -267,26 +263,10 @@ int merge_chunks_to_fastdfs(char *file_md5, int chunk_count, char *filename, cha
     char suffix[SUFFIX_LEN] = {0};
     get_file_suffix(filename, suffix);
 
-    // 加载FastDFS配置
-    get_cfg_value(CFG_PATH, "dfs_path", "client", fdfs_cli_conf_path);
-
-    log_init();
-    g_log_context.log_level = LOG_ERR;
-    ignore_signal_pipe();
-
-    result = fdfs_client_init(fdfs_cli_conf_path);
-    if (result != 0)
-    {
-        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC,
-            "fdfs_client_init err: %d\n", result);
-        return -1;
-    }
-
     pTrackerServer = tracker_get_connection();
     if (pTrackerServer == NULL)
     {
         LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "tracker_get_connection err\n");
-        fdfs_client_destroy();
         return -1;
     }
 
@@ -297,62 +277,27 @@ int merge_chunks_to_fastdfs(char *file_md5, int chunk_count, char *filename, cha
     {
         LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC,
             "tracker_query_storage_store err: %d\n", result);
-        fdfs_client_destroy();
         return -1;
     }
 
     // ====== 上传第一个分片(index=0)作为appender文件 ======
     sprintf(path, "%s/%s/0", CHUNK_TEMP_DIR, file_md5);
-    if (stat(path, &st) != 0)
-    {
-        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "stat chunk 0 err\n");
-        fdfs_client_destroy();
-        return -1;
-    }
 
-    buf = (char *)malloc(st.st_size);
-    if (buf == NULL)
-    {
-        fdfs_client_destroy();
-        return -1;
-    }
-
-    fd = open(path, O_RDONLY);
-    if (fd < 0)
-    {
-        free(buf);
-        fdfs_client_destroy();
-        return -1;
-    }
-
-    long total = 0;
-    while (total < st.st_size)
-    {
-        int n = read(fd, buf + total, st.st_size - total);
-        if (n <= 0) break;
-        total += n;
-    }
-    close(fd);
-
-    // 使用appender API上传第一个分片
-    result = storage_upload_appender_by_filebuff1(
+    result = storage_upload_appender_by_filename1(
         pTrackerServer, &storageServer, store_path_index,
-        buf, st.st_size,
-        suffix,
+        path, suffix,
         NULL, 0,
         group_name, fileid);
-
-    free(buf);
-    unlink(path); // 删除分片0
 
     if (result != 0)
     {
         LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC,
             "upload appender chunk 0 err: %d\n", result);
         tracker_close_connection_ex(pTrackerServer, true);
-        fdfs_client_destroy();
         return -1;
     }
+
+    unlink(path); // 删除分片0
 
     LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC,
         "appender file created: %s\n", fileid);
@@ -362,37 +307,10 @@ int merge_chunks_to_fastdfs(char *file_md5, int chunk_count, char *filename, cha
     for (i = 1; i < chunk_count; i++)
     {
         sprintf(path, "%s/%s/%d", CHUNK_TEMP_DIR, file_md5, i);
-        if (stat(path, &st) != 0)
-        {
-            LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC,
-                "stat chunk %d err\n", i);
-            result = -1;
-            break;
-        }
 
-        buf = (char *)malloc(st.st_size);
-        if (buf == NULL) { result = -1; break; }
-
-        fd = open(path, O_RDONLY);
-        if (fd < 0) { free(buf); result = -1; break; }
-
-        total = 0;
-        while (total < st.st_size)
-        {
-            int n = read(fd, buf + total, st.st_size - total);
-            if (n <= 0) break;
-            total += n;
-        }
-        close(fd);
-
-        // 追加到appender文件
-        result = storage_append_by_filebuff1(
+        result = storage_append_by_filename1(
             pTrackerServer, &storageServer,
-            fileid,
-            buf, st.st_size);
-
-        free(buf);
-        unlink(path); // 合并后立即删除该分片
+            path, fileid);
 
         if (result != 0)
         {
@@ -401,12 +319,13 @@ int merge_chunks_to_fastdfs(char *file_md5, int chunk_count, char *filename, cha
             break;
         }
 
+        unlink(path); // 合并后立即删除该分片
+
         LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC,
-            "appended chunk %d (%ld bytes)\n", i, (long)st.st_size);
+            "appended chunk %d\n", i);
     }
 
     tracker_close_connection_ex(pTrackerServer, true);
-    fdfs_client_destroy();
 
     // 删除临时目录
     char chunk_dir[512] = {0};
@@ -544,6 +463,17 @@ END:
 int main()
 {
     read_cfg();
+
+    // FastDFS 初始化只做一次，避免在 FastCGI 循环中反复 init/destroy 导致崩溃
+    char fdfs_cli_conf_path[256] = {0};
+    get_cfg_value(CFG_PATH, "dfs_path", "client", fdfs_cli_conf_path);
+    ignore_signal_pipe();
+    g_log_context.log_level = LOG_ERR;
+    if (fdfs_client_init(fdfs_cli_conf_path) != 0)
+    {
+        LOG(CHUNK_LOG_MODULE, CHUNK_LOG_PROC, "fdfs_client_init err, exit\n");
+        return 1;
+    }
 
     while (FCGI_Accept() >= 0)
     {
