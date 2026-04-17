@@ -138,6 +138,12 @@ export const aiSearch = async (query, user, apiKey) => {
   if (data.code !== 0) {
     throw new Error(data.msg || '搜索失败');
   }
+  if (data.files) {
+    data.files = data.files.map(f => ({
+      ...f,
+      url: f.url ? f.url.replace(API_CONFIG.STORAGE_URL, API_CONFIG.BASE_URL) : '',
+    }));
+  }
   return data;
 };
 
