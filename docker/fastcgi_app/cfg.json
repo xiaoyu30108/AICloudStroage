@@ -21,19 +21,19 @@
 
 	"web_server":
 	{
-		"ip": "172.30.0.3",
+		"ip": "172.30.0.5",
 		"port": "80"
 	},
 
 	"storage_web_server":
 	{
-		"ip": "172.30.0.3",
+		"ip": "172.30.0.5",
 		"port": "80"
 	},
 
 	"public_server":
 	{
-		"ip": "xxx.xx.xx.xx",
+		"ip": "192.168.104.123",
 		"port": "8080"
 	},
 

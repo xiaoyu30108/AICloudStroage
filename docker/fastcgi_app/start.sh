@@ -7,6 +7,11 @@ echo "Redis 已启动"
 # 等待 Redis 就绪
 sleep 1
 
+# 创建运行时目录。chunk_merge 启动时会初始化 FastDFS client，
+# 需要 client 日志目录已经存在。
+mkdir -p /tmp/chunks
+mkdir -p /fastdfs_data_and_log/client
+
 # 启动 9 个 FastCGI 进程
 echo -n "登录："
 spawn-fcgi -a 0.0.0.0 -p 10000 -f /app/bin_cgi/login
@@ -32,8 +37,8 @@ spawn-fcgi -a 0.0.0.0 -p 10009 -f /app/bin_cgi/chunk_init
 echo -n "ChunkUpload："
 spawn-fcgi -a 0.0.0.0 -p 10010 -f /app/bin_cgi/chunk_upload
 
-# chunk_merge 启动时需要连接 tracker，等待 tracker 就绪
-echo -n "等待 tracker(172.30.0.3:22122) 就绪..."
+# chunk_merge 启动时需要连接 tracker，等待 tracker 集群就绪
+echo -n "等待 tracker(172.30.0.3/172.30.0.4:22122) 就绪..."
 for i in $(seq 1 30); do
     if fdfs_monitor /etc/fdfs/client.conf >/dev/null 2>&1; then
         echo "OK"
@@ -43,17 +48,16 @@ for i in $(seq 1 30); do
 done
 echo -n "ChunkMerge："
 spawn-fcgi -a 0.0.0.0 -p 10011 -f /app/bin_cgi/chunk_merge
+sleep 1
+if ! lsof -i:10011 >/dev/null 2>&1; then
+    echo "ChunkMerge 启动失败，重试一次..."
+    spawn-fcgi -a 0.0.0.0 -p 10011 -f /app/bin_cgi/chunk_merge
+fi
 
 # AI 智能检索
 mkdir -p /data/faiss
 echo -n "AI："
 spawn-fcgi -a 0.0.0.0 -p 10012 -f /app/bin_cgi/ai
-
-# 创建分片临时目录
-mkdir -p /tmp/chunks
-
-# 创建 FastDFS 客户端日志目录
-mkdir -p /fastdfs_data_and_log/client
 
 echo "所有 FastCGI 程序已启动"
 

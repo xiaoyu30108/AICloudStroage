@@ -1,6 +1,22 @@
 import { API_CONFIG } from '../config';
 import SparkMD5 from 'spark-md5';
 
+const normalizeStorageUrl = (rawUrl) => {
+  if (!rawUrl) return '';
+
+  // 已经是同源相对路径，直接使用
+  if (rawUrl.startsWith('/')) return rawUrl;
+
+  // FastDFS 外链地址统一转为同源相对路径，避免协议/域名不一致导致图片无法渲染
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    return `${parsed.pathname || ''}${parsed.search || ''}${parsed.hash || ''}`;
+  } catch (e) {
+    // 兜底保留旧逻辑
+    return rawUrl.replace(API_CONFIG.STORAGE_URL, API_CONFIG.BASE_URL);
+  }
+};
+
 export const fetchUserImages = async (user) => {
   const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.MY_FILES}?cmd=normal`, {
     method: 'POST',
@@ -10,7 +26,7 @@ export const fetchUserImages = async (user) => {
     body: JSON.stringify({
       token: user.token,
       user: user.username,
-      count: 20,
+      count: 200,
       start: 0
     })
   });
@@ -20,7 +36,7 @@ export const fetchUserImages = async (user) => {
     return (data.files || []).map(file => ({
       ...file,
       name: file.file_name || file.filename,
-      url: file.url ? file.url.replace(API_CONFIG.STORAGE_URL, API_CONFIG.BASE_URL) : '',
+      url: normalizeStorageUrl(file.url),
       pv: file.pv || 0,
     }));
   }

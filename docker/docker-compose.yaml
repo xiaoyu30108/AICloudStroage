@@ -1,4 +1,20 @@
-version: '3.8'
+x-fastdfs-image: &fastdfs-image
+  build:
+    context: ..
+    dockerfile: docker/nginx_fastdfs/dockerfile
+    args:
+      SSL_CERT_IP: ${SSL_CERT_IP:-127.0.0.1}
+  restart: unless-stopped
+
+x-fastdfs-trackers: &fastdfs-trackers
+  TRACKER_SERVERS: 172.30.0.3:22122,172.30.0.4:22122
+
+x-storage-healthcheck: &storage-healthcheck
+  test: ["CMD-SHELL", "curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:443/ | grep -qE '^[2]'"]
+  interval: 10s
+  timeout: 5s
+  retries: 10
+  start_period: 60s
 
 services:
   tc_mysql:
@@ -10,8 +26,8 @@ services:
       my_net:
         ipv4_address: 172.30.0.2
     restart: unless-stopped
-    ports:
-      - "3307:3306"
+    # ports:
+    #   - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -20,26 +36,126 @@ services:
       timeout: 3s
       retries: 10
 
-  nginx_fastdfs:
-    build:
-      context: ..
-      dockerfile: docker/nginx_fastdfs/dockerfile
-    container_name: tc_fcgi_nginx_fastdfs
+  tracker1:
+    <<: *fastdfs-image
+    container_name: tc_fcgi_tracker1
+    environment:
+      FASTDFS_ROLE: tracker
     networks:
       my_net:
         ipv4_address: 172.30.0.3
-    restart: unless-stopped
+    volumes:
+      - tracker1_data:/fastdfs_data_and_log
+    healthcheck:
+      test: ["CMD", "lsof", "-i", ":22122"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  tracker2:
+    <<: *fastdfs-image
+    container_name: tc_fcgi_tracker2
+    environment:
+      FASTDFS_ROLE: tracker
+    networks:
+      my_net:
+        ipv4_address: 172.30.0.4
+    volumes:
+      - tracker2_data:/fastdfs_data_and_log
+    healthcheck:
+      test: ["CMD", "lsof", "-i", ":22122"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  nginx_fastdfs:
+    <<: *fastdfs-image
+    container_name: tc_fcgi_storage1
+    environment:
+      <<: *fastdfs-trackers
+      FASTDFS_ROLE: storage
+      GROUP_NAME: group1
+      STORAGE_IP: 172.30.0.5
+    networks:
+      my_net:
+        ipv4_address: 172.30.0.5
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - fastdfs_data:/fastdfs_data_and_log
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:443/ | grep -qE '^[2]'"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
+      - storage1_data:/fastdfs_data_and_log
+      - ./nginx_fastdfs/nginx.conf:/usr/local/nginx/conf/nginx.conf:ro
+    depends_on:
+      tracker1:
+        condition: service_healthy
+      tracker2:
+        condition: service_healthy
+    healthcheck: *storage-healthcheck
+
+  storage2:
+    <<: *fastdfs-image
+    container_name: tc_fcgi_storage2
+    environment:
+      <<: *fastdfs-trackers
+      FASTDFS_ROLE: storage
+      GROUP_NAME: group1
+      STORAGE_IP: 172.30.0.6
+    networks:
+      my_net:
+        ipv4_address: 172.30.0.6
+    volumes:
+      - storage2_data:/fastdfs_data_and_log
+      - ./nginx_fastdfs/nginx.conf:/usr/local/nginx/conf/nginx.conf:ro
+    depends_on:
+      tracker1:
+        condition: service_healthy
+      tracker2:
+        condition: service_healthy
+    healthcheck: *storage-healthcheck
+
+  storage3:
+    <<: *fastdfs-image
+    container_name: tc_fcgi_storage3
+    environment:
+      <<: *fastdfs-trackers
+      FASTDFS_ROLE: storage
+      GROUP_NAME: group2
+      STORAGE_IP: 172.30.0.7
+    networks:
+      my_net:
+        ipv4_address: 172.30.0.7
+    volumes:
+      - storage3_data:/fastdfs_data_and_log
+      - ./nginx_fastdfs/nginx.conf:/usr/local/nginx/conf/nginx.conf:ro
+    depends_on:
+      tracker1:
+        condition: service_healthy
+      tracker2:
+        condition: service_healthy
+    healthcheck: *storage-healthcheck
+
+  storage4:
+    <<: *fastdfs-image
+    container_name: tc_fcgi_storage4
+    environment:
+      <<: *fastdfs-trackers
+      FASTDFS_ROLE: storage
+      GROUP_NAME: group2
+      STORAGE_IP: 172.30.0.8
+    networks:
+      my_net:
+        ipv4_address: 172.30.0.8
+    volumes:
+      - storage4_data:/fastdfs_data_and_log
+      - ./nginx_fastdfs/nginx.conf:/usr/local/nginx/conf/nginx.conf:ro
+    depends_on:
+      tracker1:
+        condition: service_healthy
+      tracker2:
+        condition: service_healthy
+    healthcheck: *storage-healthcheck
 
   fastcgi_app:
     build:
@@ -48,10 +164,8 @@ services:
     container_name: tc_fcgi_app
     networks:
       my_net:
-        ipv4_address: 172.30.0.4
+        ipv4_address: 172.30.0.9
     restart: unless-stopped
-    ports:
-      - "10000-10012:10000-10012"
     volumes:
       - ./nginx_fastdfs/client.conf:/etc/fdfs/client.conf
     depends_on:
@@ -75,5 +189,10 @@ networks:
           gateway: 172.30.0.1
 
 volumes:
-  fastdfs_data:
+  tracker1_data:
+  tracker2_data:
+  storage1_data:
+  storage2_data:
+  storage3_data:
+  storage4_data:
   mysql_data:

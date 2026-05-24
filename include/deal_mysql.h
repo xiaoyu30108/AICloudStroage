@@ -3,7 +3,7 @@
 
 #include <mysql/mysql.h> //数据库
 
-#define SQL_MAX_LEN         (512)   //sql语句长度
+#define SQL_MAX_LEN         (4096)   //sql语句长度
 
 /* -------------------------------------------*/
 /**
@@ -30,6 +30,9 @@ void print_error(MYSQL *conn, const char *title);
  */
 /* -------------------------------------------*/
 MYSQL* msql_conn(char *user_name, char* passwd, char *db_name);
+
+// 转义进入 SQL 字符串字面量的外部输入，返回 0 成功，-1 失败
+int sql_escape_string(MYSQL *conn, const char *src, char *dst, unsigned long dst_len);
 
 
 /* -------------------------------------------*/

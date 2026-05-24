@@ -49,8 +49,18 @@ const ImageList = () => {
 
   const isImageFile = (file) => {
     const imageTypes = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'];
-    const type = (file.type || '').toLowerCase();
-    return imageTypes.includes(type);
+    const rawType = (file.type || '').toLowerCase().trim().replace(/^\./, '');
+    if (imageTypes.includes(rawType)) {
+      return true;
+    }
+
+    const candidate = (file.file_name || file.name || file.url || '').toLowerCase();
+    const extMatch = candidate.match(/\.([a-z0-9]+)(?:\?|#|$)/);
+    if (!extMatch) {
+      return false;
+    }
+
+    return imageTypes.includes(extMatch[1]);
   };
 
   const fetchImages = async () => {

@@ -11,6 +11,7 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
+ARG SSL_CERT_IP=192.168.104.123
 
 # 安装基础依赖
 RUN apt-get update && apt-get install -y \
@@ -21,32 +22,27 @@ RUN apt-get update && apt-get install -y \
     libpcre3-dev libssl-dev zlib1g-dev openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制预下载的依赖源码
-COPY deps/libfastcommon-V1.0.43.tar.gz /tmp/
-COPY deps/fastdfs-V6.06.tar.gz /tmp/
-COPY deps/fastdfs-nginx-module-V1.22.tar.gz /tmp/
+# 复制项目中维护的源码，便于直接修改 FastDFS / nginx module 后重新构建镜像
+COPY third_party/libfastcommon-1.0.43 /tmp/libfastcommon-1.0.43
+COPY third_party/fastdfs-6.06 /tmp/fastdfs-6.06
+COPY third_party/fastdfs-nginx-module-1.22 /tmp/fastdfs-nginx-module-1.22
 
 # 编译安装 libfastcommon V1.0.43
-RUN cd /tmp && \
-    tar xzf libfastcommon-V1.0.43.tar.gz && \
-    cd libfastcommon-1.0.43 && \
+RUN cd /tmp/libfastcommon-1.0.43 && \
     ./make.sh && ./make.sh install && \
     ldconfig && \
-    rm -rf /tmp/libfastcommon-1.0.43 /tmp/libfastcommon-V1.0.43.tar.gz
+    rm -rf /tmp/libfastcommon-1.0.43
 
 # 编译安装 FastDFS V6.06，并复制 http.conf 和 mime.types
-RUN cd /tmp && \
-    tar xzf fastdfs-V6.06.tar.gz && \
-    cd fastdfs-6.06 && \
+RUN cd /tmp/fastdfs-6.06 && \
     ./make.sh && ./make.sh install && \
     ldconfig && \
     cp conf/http.conf /etc/fdfs/http.conf && \
     cp conf/mime.types /etc/fdfs/mime.types && \
-    rm -rf /tmp/fastdfs-6.06 /tmp/fastdfs-V6.06.tar.gz
+    rm -rf /tmp/fastdfs-6.06
 
 # 编译安装 fastdfs-nginx-module V1.22 + nginx
 RUN cd /tmp && \
-    tar xzf fastdfs-nginx-module-V1.22.tar.gz && \
     wget http://nginx.org/download/nginx-1.20.2.tar.gz && \
     tar xzf nginx-1.20.2.tar.gz && \
     cd nginx-1.20.2 && \
@@ -54,7 +50,7 @@ RUN cd /tmp && \
         --add-module=/tmp/fastdfs-nginx-module-1.22/src \
         --with-http_ssl_module && \
     make && make install && \
-    rm -rf /tmp/nginx-1.20.2 /tmp/nginx-1.20.2.tar.gz /tmp/fastdfs-nginx-module-1.22 /tmp/fastdfs-nginx-module-V1.22.tar.gz
+    rm -rf /tmp/nginx-1.20.2 /tmp/nginx-1.20.2.tar.gz /tmp/fastdfs-nginx-module-1.22
 
 # 创建必要目录
 RUN mkdir -p /fastdfs_data_and_log/tracker \
@@ -69,8 +65,8 @@ RUN mkdir -p /etc/nginx/ssl && \
         -newkey rsa:2048 \
         -keyout /etc/nginx/ssl/server.key \
         -out /etc/nginx/ssl/server.crt \
-        -subj "/C=CN/ST=Beijing/L=Beijing/O=YunCunChu/CN=xxx.xx.xx.xx" \
-        -addext "subjectAltName=IP:xxx.xx.xx.xx"
+        -subj "/C=CN/ST=Beijing/L=Beijing/O=YunCunChu/CN=${SSL_CERT_IP}" \
+        -addext "subjectAltName=IP:${SSL_CERT_IP}"
 
 # 复制 FastDFS 配置模板
 RUN cp /etc/fdfs/tracker.conf.sample /etc/fdfs/tracker.conf && \

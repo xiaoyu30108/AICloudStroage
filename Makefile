@@ -87,7 +87,7 @@ $(login):	$(CGI_SRC_PATH)/login_cgi.o \
 			$(COMMON_PATH)/des.o \
 			$(COMMON_PATH)/base64.o \
 			$(COMMON_PATH)/md5.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 注册
 $(register):	$(CGI_SRC_PATH)/reg_cgi.o \
 				$(COMMON_PATH)/make_log.o  \
@@ -97,7 +97,7 @@ $(register):	$(CGI_SRC_PATH)/reg_cgi.o \
 				$(COMMON_PATH)/redis_op.o  \
 				$(COMMON_PATH)/cfg.o \
 				$(COMMON_PATH)/md5.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 秒传
 $(md5):		$(CGI_SRC_PATH)/md5_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -106,7 +106,7 @@ $(md5):		$(CGI_SRC_PATH)/md5_cgi.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 上传
 $(upload):$(CGI_SRC_PATH)/upload_cgi.o \
 		  $(COMMON_PATH)/make_log.o  \
@@ -115,7 +115,7 @@ $(upload):$(CGI_SRC_PATH)/upload_cgi.o \
 		  $(COMMON_PATH)/deal_mysql.o \
 		  $(COMMON_PATH)/redis_op.o  \
 		  $(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 用户列表展示
 $(myfiles):	$(CGI_SRC_PATH)/myfiles_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -124,7 +124,7 @@ $(myfiles):	$(CGI_SRC_PATH)/myfiles_cgi.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 分享、删除文件、pv字段处理
 $(dealfile):$(CGI_SRC_PATH)/dealfile_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -134,7 +134,7 @@ $(dealfile):$(CGI_SRC_PATH)/dealfile_cgi.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o \
 			$(COMMON_PATH)/md5.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 共享文件列表展示
 $(sharefiles):	$(CGI_SRC_PATH)/sharefiles_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -143,7 +143,7 @@ $(sharefiles):	$(CGI_SRC_PATH)/sharefiles_cgi.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 共享文件pv字段处理、取消分享、转存文件
 $(dealsharefile):	$(CGI_SRC_PATH)/dealsharefile_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -152,7 +152,7 @@ $(dealsharefile):	$(CGI_SRC_PATH)/dealsharefile_cgi.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 
 # 图床分享图片功能
 $(sharepicture):	$(CGI_SRC_PATH)/sharepicture_cgi.o \
@@ -163,7 +163,7 @@ $(sharepicture):	$(CGI_SRC_PATH)/sharepicture_cgi.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o \
 			$(COMMON_PATH)/md5.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 分片上传初始化
 $(chunk_init):	$(CGI_SRC_PATH)/chunk_init_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -172,7 +172,7 @@ $(chunk_init):	$(CGI_SRC_PATH)/chunk_init_cgi.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 分片上传
 $(chunk_upload):	$(CGI_SRC_PATH)/chunk_upload_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -181,7 +181,7 @@ $(chunk_upload):	$(CGI_SRC_PATH)/chunk_upload_cgi.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # 分片合并
 $(chunk_merge):	$(CGI_SRC_PATH)/chunk_merge_cgi.o \
 			$(COMMON_PATH)/make_log.o  \
@@ -190,15 +190,75 @@ $(chunk_merge):	$(CGI_SRC_PATH)/chunk_merge_cgi.o \
 			$(COMMON_PATH)/deal_mysql.o \
 			$(COMMON_PATH)/redis_op.o  \
 			$(COMMON_PATH)/cfg.o
-	$(CC) $^ -o $@ $(LIBS)
+	$(CXX) $^ -o $@ $(LIBS)
 # AI 智能检索（C++ 编译）
 $(CGI_SRC_PATH)/ai_cgi.o: $(CGI_SRC_PATH)/ai_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/login_cgi.o: $(CGI_SRC_PATH)/login_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/myfiles_cgi.o: $(CGI_SRC_PATH)/myfiles_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/reg_cgi.o: $(CGI_SRC_PATH)/reg_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/md5_cgi.o: $(CGI_SRC_PATH)/md5_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/upload_cgi.o: $(CGI_SRC_PATH)/upload_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/dealfile_cgi.o: $(CGI_SRC_PATH)/dealfile_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/dealsharefile_cgi.o: $(CGI_SRC_PATH)/dealsharefile_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/sharefiles_cgi.o: $(CGI_SRC_PATH)/sharefiles_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/sharepicture_cgi.o: $(CGI_SRC_PATH)/sharepicture_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/chunk_init_cgi.o: $(CGI_SRC_PATH)/chunk_init_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/chunk_upload_cgi.o: $(CGI_SRC_PATH)/chunk_upload_cgi.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(CGI_SRC_PATH)/chunk_merge_cgi.o: $(CGI_SRC_PATH)/chunk_merge_cgi.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
 
 $(CGI_SRC_PATH)/dashscope_api.o: $(COMMON_PATH)/dashscope_api.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
 
 $(CGI_SRC_PATH)/faiss_wrapper.o: $(COMMON_PATH)/faiss_wrapper.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(COMMON_PATH)/base64.o: $(COMMON_PATH)/base64.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(COMMON_PATH)/cfg.o: $(COMMON_PATH)/cfg.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(COMMON_PATH)/deal_mysql.o: $(COMMON_PATH)/deal_mysql.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(COMMON_PATH)/des.o: $(COMMON_PATH)/des.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(COMMON_PATH)/make_log.o: $(COMMON_PATH)/make_log.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(COMMON_PATH)/md5.o: $(COMMON_PATH)/md5.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
+
+$(COMMON_PATH)/redis_op.o: $(COMMON_PATH)/redis_op.cpp
+	$(CXX) -c $< -o $@ $(CXXFLAGS) -fpermissive $(CPPLFAGS)
+
+$(COMMON_PATH)/util_cgi.o: $(COMMON_PATH)/util_cgi.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS) $(CPPLFAGS)
 
 $(ai): $(CGI_SRC_PATH)/ai_cgi.o \

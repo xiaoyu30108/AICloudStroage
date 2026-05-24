@@ -23,9 +23,9 @@ RUN apt-get update && apt-get install -y \
 
 # 复制预下载的依赖源码
 COPY deps/hiredis-v1.0.2.tar.gz /tmp/
-COPY deps/libfastcommon-V1.0.43.tar.gz /tmp/
-COPY deps/fastdfs-V6.06.tar.gz /tmp/
 COPY deps/faiss-v1.7.2.tar.gz /tmp/
+COPY third_party/libfastcommon-1.0.43 /tmp/libfastcommon-1.0.43
+COPY third_party/fastdfs-6.06 /tmp/fastdfs-6.06
 
 # 编译安装 hiredis
 RUN cd /tmp && \
@@ -36,20 +36,16 @@ RUN cd /tmp && \
     rm -rf /tmp/hiredis-1.0.2 /tmp/hiredis-v1.0.2.tar.gz
 
 # 编译安装 libfastcommon V1.0.43
-RUN cd /tmp && \
-    tar xzf libfastcommon-V1.0.43.tar.gz && \
-    cd libfastcommon-1.0.43 && \
+RUN cd /tmp/libfastcommon-1.0.43 && \
     ./make.sh && ./make.sh install && \
     ldconfig && \
-    rm -rf /tmp/libfastcommon-1.0.43 /tmp/libfastcommon-V1.0.43.tar.gz
+    rm -rf /tmp/libfastcommon-1.0.43
 
 # 编译安装 FastDFS V6.06
-RUN cd /tmp && \
-    tar xzf fastdfs-V6.06.tar.gz && \
-    cd fastdfs-6.06 && \
+RUN cd /tmp/fastdfs-6.06 && \
     ./make.sh && ./make.sh install && \
     ldconfig && \
-    rm -rf /tmp/fastdfs-6.06 /tmp/fastdfs-V6.06.tar.gz
+    rm -rf /tmp/fastdfs-6.06
 
 # 编译安装 FAISS v1.7.2（CPU 版，用于 AI 向量检索）
 RUN cd /tmp && \

@@ -1,6 +1,6 @@
 export const API_CONFIG = {
   BASE_URL: '',
-  STORAGE_URL: 'http://172.30.0.3:80',
+  STORAGE_URL: 'http://172.30.0.5:80',
   ENDPOINTS: {
     LOGIN: '/api/login',
     REGISTER: '/api/reg',
